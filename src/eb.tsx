@@ -1,4 +1,4 @@
-import { ActionPanel, Action, List, getPreferenceValues } from "@raycast/api";
+import { ActionPanel, Action, List, getPreferenceValues, showToast, Toast, confirmAlert, Icon } from "@raycast/api";
 import { useState, useEffect } from "react";
 import { execSync } from "child_process";
 
@@ -9,6 +9,10 @@ interface BluetoothDevice {
   lastConnected?: Date;
   type?: string;
   batteryLevel?: string;
+  rssi?: string;
+  vendorId?: string;
+  productId?: string;
+  firmwareVersion?: string;
 }
 
 interface Preferences {
@@ -20,9 +24,12 @@ interface RawBluetoothDeviceData {
     device_address: string;
     device_minorType?: string;
     device_batteryLevelMain?: string;
+    device_rssi?: string;
+    device_vendorID?: string;
+    device_productID?: string;
+    device_firmwareVersion?: string;
   };
 }
-
 
 function fuzzySearch(device: BluetoothDevice, searchText: string): boolean {
   const searchLower = searchText.toLowerCase();
@@ -53,6 +60,9 @@ export default function Command() {
   const [allDevices, setAllDevices] = useState<BluetoothDevice[]>([]);
   const [searchText, setSearchText] = useState("");
   const [blueutilPath, setBlueutilPath] = useState<string>("");
+
+  const [isScanning, setIsScanning] = useState(false);
+  const [discoveredDevices, setDiscoveredDevices] = useState<BluetoothDevice[]>([]);
 
   useEffect(() => {
     try {
@@ -90,6 +100,10 @@ export default function Command() {
             connected: true,
             type: deviceData.device_minorType,
             batteryLevel: deviceData.device_batteryLevelMain,
+            rssi: deviceData.device_rssi,
+            vendorId: deviceData.device_vendorID,
+            productId: deviceData.device_productID,
+            firmwareVersion: deviceData.device_firmwareVersion,
             lastConnected: new Date(),
           };
         }),
@@ -103,6 +117,10 @@ export default function Command() {
             type: deviceData.device_minorType,
             batteryLevel: deviceData.device_batteryLevelMain,
             lastConnected: undefined,
+            rssi: deviceData.device_rssi,
+            vendorId: deviceData.device_vendorID,
+            productId: deviceData.device_productID,
+            firmwareVersion: deviceData.device_firmwareVersion,
           };
         }),
       ];
@@ -139,39 +157,154 @@ export default function Command() {
     }
   };
 
+  const forgetDevice = async (address: string, name: string) => {
+    if (
+      await confirmAlert({
+        title: "Forget Device",
+        message: `Are you sure you want to forget "${name}"?`,
+        primaryAction: { title: "Forget", style: Action.Style.Destructive },
+      })
+    ) {
+      try {
+        execSync(`blueutil --unpair ${address}`);
+        showToast(Toast.Style.Success, "Device forgotten");
+        refreshDevices();
+      } catch (error) {
+        showToast(Toast.Style.Failure, "Failed to forget device");
+      }
+    }
+  };
+
+  const startDiscovery = async () => {
+    try {
+      if (!blueutilPath) throw new Error("blueutil not found");
+
+      setIsScanning(true);
+      showToast(Toast.Style.Animated, "Scanning for devices...");
+
+      // Get existing device addresses to filter out already known devices
+      const existingAddresses = allDevices.map((d) => d.address);
+
+      // Start discovery and parse output
+      const output = execSync(`${blueutilPath} --inquiry 10 --format json`).toString();
+      const discovered = JSON.parse(output)
+        .filter((device: any) => !existingAddresses.includes(device.address))
+        .map((device: any) => ({
+          name: device.name || "Unknown Device",
+          address: device.address,
+          connected: false,
+          type: "New Device",
+          rssi: device.rssi?.toString(),
+        }));
+
+      setDiscoveredDevices(discovered);
+      setIsScanning(false);
+      showToast(Toast.Style.Success, `Found ${discovered.length} new devices`);
+    } catch (error) {
+      setIsScanning(false);
+      showToast(Toast.Style.Failure, "Failed to scan for devices");
+      console.error("Discovery error:", error);
+    }
+  };
+
+  const pairDevice = async (address: string, name: string) => {
+    try {
+      showToast(Toast.Style.Animated, `Pairing with ${name}...`);
+      execSync(`${blueutilPath} --pair ${address}`);
+      await refreshDevices();
+      setDiscoveredDevices((prev) => prev.filter((d) => d.address !== address));
+      showToast(Toast.Style.Success, `Paired with ${name}`);
+    } catch (error) {
+      showToast(Toast.Style.Failure, `Failed to pair with ${name}`);
+    }
+  };
+
   return (
     <List
+      isLoading={isScanning}
       searchText={searchText}
       onSearchTextChange={setSearchText}
       filtering={false}
-      searchBarPlaceholder="Search by name or type (e.g., 'headset', 'k3 key', or device type)"
+      searchBarPlaceholder="Search devices or press ⌃N to scan for new devices"
     >
-      {filteredDevices.map((device) => (
-        <List.Item
-          key={device.address}
-          title={device.name}
-          subtitle={device.type || "Unknown Device"}
-          accessories={[
-            {
-              text: [
-                device.connected ? "Connected" : "Disconnected",
-                device.batteryLevel ? `Battery: ${device.batteryLevel}` : null,
-              ]
-                .filter(Boolean)
-                .join(" • "),
-            },
-          ]}
-          actions={
-            <ActionPanel>
-              <Action
-                title={device.connected ? "Disconnect" : "Connect"}
-                onAction={() => toggleConnection(device.address, device.connected)}
-              />
-              <Action title="Refresh Devices" onAction={refreshDevices} shortcut={{ modifiers: ["cmd"], key: "r" }} />
-            </ActionPanel>
-          }
-        />
-      ))}
+      {discoveredDevices.length > 0 && (
+        <List.Section title="Discovered Devices">
+          {discoveredDevices.map((device) => (
+            <List.Item
+              key={device.address}
+              title={device.name}
+              subtitle="Available to pair"
+              icon={Icon.Bluetooth}
+              accessories={[{ text: device.rssi ? `Signal: ${device.rssi}dBm` : undefined }]}
+              actions={
+                <ActionPanel>
+                  <Action
+                    title="Pair Device"
+                    onAction={() => pairDevice(device.address, device.name)}
+                    icon={Icon.Link}
+                  />
+                </ActionPanel>
+              }
+            />
+          ))}
+        </List.Section>
+      )}
+
+      <List.Section title="Paired Devices">
+        {filteredDevices.map((device) => (
+          <List.Item
+            key={device.address}
+            title={device.name}
+            subtitle={device.type || "Unknown Device"}
+            icon={device.connected ? Icon.CircleFilled : Icon.Circle}
+            accessories={[
+              {
+                text: [
+                  device.connected ? "Connected" : "Disconnected",
+                  device.batteryLevel ? `Battery: ${device.batteryLevel}` : null,
+                  device.rssi ? `Signal: ${device.rssi}dBm` : null,
+                  device.firmwareVersion ? `FW: ${device.firmwareVersion}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" • "),
+              },
+            ]}
+            actions={
+              <ActionPanel>
+                <ActionPanel.Section title="General">
+                  <Action
+                    title="Refresh Devices"
+                    onAction={refreshDevices}
+                    shortcut={{ modifiers: ["ctrl"], key: "r" }}
+                    icon={Icon.RotateClockwise}
+                  />
+                  <Action
+                    title="Scan for Devices"
+                    onAction={startDiscovery}
+                    shortcut={{ modifiers: ["ctrl"], key: "n" }}
+                    icon={Icon.MagnifyingGlass}
+                  />
+                </ActionPanel.Section>
+                <ActionPanel.Section title="Device Controls">
+                  <Action
+                    title={device.connected ? "Disconnect" : "Connect"}
+                    onAction={() => toggleConnection(device.address, device.connected)}
+                    shortcut={{ modifiers: ["ctrl"], key: "return" }}
+                    icon={device.connected ? Icon.MinusCircle : Icon.PlusCircle}
+                  />
+                  <Action
+                    title="Forget Device"
+                    onAction={() => forgetDevice(device.address, device.name)}
+                    shortcut={{ modifiers: ["ctrl"], key: "backspace" }}
+                    style={Action.Style.Destructive}
+                    icon={Icon.Trash}
+                  />
+                </ActionPanel.Section>
+              </ActionPanel>
+            }
+          />
+        ))}
+      </List.Section>
     </List>
   );
 }
