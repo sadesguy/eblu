@@ -239,7 +239,7 @@ export default function Command() {
       await confirmAlert({
         title: "Forget Device",
         message: `Are you sure you want to forget "${name}"?`,
-        primaryAction: { title: "Forget", style: Action.Style.Destructive },
+        primaryAction: { title: "Forget" },
       })
     ) {
       try {
@@ -253,11 +253,6 @@ export default function Command() {
         // Then unpair
         await execSync(`${blueutilPath} --unpair ${address}`);
         await new Promise((resolve) => setTimeout(resolve, 1000));
-
-        // Finally power cycle Bluetooth
-        await execSync(`${blueutilPath} --power 0`);
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        await execSync(`${blueutilPath} --power 1`);
 
         showToast(Toast.Style.Success, `Forgot ${name}`);
         await new Promise((resolve) => setTimeout(resolve, 2000));
