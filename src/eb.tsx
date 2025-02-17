@@ -71,7 +71,7 @@ const getConnectionCommand = (device: BluetoothDevice): string => {
   return "--connect-le";
 };
 
-const determineProtocol = (deviceData: any): "classic" | "le" | "dual" => {
+const determineProtocol = (deviceData: RawBluetoothDeviceData[string]): "classic" | "le" | "dual" => {
   // Check device characteristics to determine protocol
   const isClassic =
     deviceData.device_minorType?.includes("Audio") ||
