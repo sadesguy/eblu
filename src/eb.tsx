@@ -525,20 +525,6 @@ export default function Command() {
                 ]}
                 actions={
                   <ActionPanel>
-                    <ActionPanel.Section title="General">
-                      <Action
-                        title="Refresh Devices"
-                        onAction={!isBluetoothEnabled || actionInProgress ? () => {} : refreshDevices}
-                        shortcut={{ modifiers: ["ctrl"], key: "r" }}
-                        icon={Icon.RotateClockwise}
-                      />
-                      <Action
-                        title={isScanning ? "Stop Scanning" : "Start Scanning"}
-                        onAction={!isBluetoothEnabled || actionInProgress ? () => {} : startDiscovery}
-                        shortcut={{ modifiers: ["ctrl"], key: "d" }}
-                        icon={isScanning ? Icon.Stop : Icon.MagnifyingGlass}
-                      />
-                    </ActionPanel.Section>
                     <ActionPanel.Section title="Device Controls">
                       {device.connected ? (
                         <Action
@@ -548,7 +534,7 @@ export default function Command() {
                               ? () => {}
                               : () => toggleConnection(device.address, true, device.name, device)
                           }
-                          shortcut={{ modifiers: ["ctrl"], key: "return" }} 
+                          shortcut={{ modifiers: [], key: "return" }}
                           icon={actionInProgress === device.address ? Icon.Clock : Icon.MinusCircle}
                         />
                       ) : (
@@ -611,6 +597,21 @@ export default function Command() {
                         shortcut={{ modifiers: ["ctrl"], key: "backspace" }}
                         style={Action.Style.Destructive}
                         icon={actionInProgress === device.address ? Icon.Clock : Icon.Trash}
+                      />
+                    </ActionPanel.Section>
+
+                    <ActionPanel.Section title="General">
+                      <Action
+                        title="Refresh Devices"
+                        onAction={!isBluetoothEnabled || actionInProgress ? () => {} : refreshDevices}
+                        shortcut={{ modifiers: ["ctrl"], key: "r" }}
+                        icon={Icon.RotateClockwise}
+                      />
+                      <Action
+                        title={isScanning ? "Stop Scanning" : "Start Scanning"}
+                        onAction={!isBluetoothEnabled || actionInProgress ? () => {} : startDiscovery}
+                        shortcut={{ modifiers: ["ctrl"], key: "d" }}
+                        icon={isScanning ? Icon.Stop : Icon.MagnifyingGlass}
                       />
                     </ActionPanel.Section>
                   </ActionPanel>
